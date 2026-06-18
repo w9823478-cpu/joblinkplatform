@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: joblink-postgres
+    environment:
+      POSTGRES_USER: scp_user
+      POSTGRES_PASSWORD: SecurePassword123
+      POSTGRES_DB: social_career_platform
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U scp_user']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - joblink-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: joblink-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - joblink-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: joblink-backend
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://scp_user:SecurePassword123@postgres:5432/social_career_platform
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: social_career_platform
+      DATABASE_USER: scp_user
+      DATABASE_PASSWORD: SecurePassword123
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+      FRONTEND_URL: http://localhost:3000
+      JWT_SECRET: your_super_secret_jwt_key_change_in_production_12345
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - joblink-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: joblink-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3001/api
+      NEXT_PUBLIC_WS_URL: http://localhost:3001
+      NEXT_PUBLIC_APP_NAME: BuildHub
+    ports:
+      - '3000:3000'
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - joblink-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  joblink-network:
+    driver: bridge
